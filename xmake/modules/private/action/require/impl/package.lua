@@ -53,10 +53,15 @@ function _load_require(require_str, requires_extra, opt)
         require_extra = requires_extra[require_str] or {}
     end
 
+    local require_format = require_extra.format
+    if not require_format and require_str:endswith(".cps") then
+        require_format = "cps"
+    end
+
     -- parse require
     local packagename, version, reponame
     local cpsinfo, cpsdiagnostics
-    if require_extra.format == "cps" then
+    if require_format == "cps" then
         local errors
         cpsinfo, cpsdiagnostics, errors = cps_parse(require_str,
             {prefix = require_extra.prefix, stage_requires_fallback = require_extra.stage_requires_fallback})
@@ -191,7 +196,7 @@ function _load_require(require_str, requires_extra, opt)
         private          = require_extra.private,   -- default: false, private package, only for installation, do not export any links/includes and environments
         build            = require_extra.build,     -- default: false, always build packages, we do not use the precompiled artifacts
         resolvedinfo     = resolvedinfo,            -- the resolved info for the conflict version/configs
-        format           = require_extra.format,    -- package metadata format, e.g. cps
+        format           = require_format,          -- package metadata format, e.g. cps
         cpsinfo          = cpsinfo,                 -- parsed cps mapping data
         cpsdiagnostics   = cpsdiagnostics           -- cps parse diagnostics
     }

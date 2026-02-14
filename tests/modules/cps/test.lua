@@ -60,4 +60,11 @@ function test_cps_require_load_seam(t)
     t:are_equal(requireitems[1].info.format, "cps")
     t:require(requireitems[1].info.cpsinfo)
     t:are_equal(requireitems[1].info.cpsinfo.components.zlib.location, path.join("C:/deps/zlib", "lib", "zlib.lib"))
+
+    local autodetect_requires = {cpsfile}
+    local autodetect_items = package_impl.load_requires(autodetect_requires, {}, {})
+    t:are_equal(#autodetect_items, 1)
+    t:are_equal(autodetect_items[1].name, "zlib")
+    t:are_equal(autodetect_items[1].info.format, "cps")
+    t:require(autodetect_items[1].info.cpsinfo)
 end
