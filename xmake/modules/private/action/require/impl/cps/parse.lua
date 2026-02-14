@@ -217,6 +217,53 @@ local function _select_components(cpsdata, opt, diagnostics)
     return nil, err
 end
 
+local function _map_version_info(cpsdata, diagnostics)
+    local version = cpsdata.version
+    if version ~= nil and type(version) ~= "string" then
+        local err = "invalid version (expect string)"
+        table.insert(diagnostics, _new_diag("error", "invalid-version", err, "version"))
+        return nil, err
+    end
+    local compat_version = cpsdata.compat_version
+    if compat_version ~= nil and type(compat_version) ~= "string" then
+        local err = "invalid compat_version (expect string)"
+        table.insert(diagnostics, _new_diag("error", "invalid-compat-version", err, "compat_version"))
+        return nil, err
+    end
+    if compat_version == nil then
+        compat_version = version
+    end
+    local version_schema = cpsdata.version_schema or "simple"
+    if type(version_schema) ~= "string" or version_schema == "" then
+        local err = "invalid version_schema (expect non-empty string)"
+        table.insert(diagnostics, _new_diag("error", "invalid-version-schema", err, "version_schema"))
+        return nil, err
+    end
+
+    local version_exact_only = false
+    if not version then
+        version_exact_only = true
+        local warn = "package version is missing; exact version matching only"
+        table.insert(diagnostics, _new_diag("warning", "missing-version-exact-only", warn, "version"))
+    end
+    if version_schema == "custom" then
+        version_exact_only = true
+        local warn = "version_schema=custom is treated as exact-only in MVP"
+        table.insert(diagnostics, _new_diag("warning", "custom-version-schema-exact-only", warn, "version_schema"))
+    elseif version_schema ~= "simple" then
+        version_exact_only = true
+        local warn = string.format("version_schema '%s' is unsupported in MVP and treated as exact-only", version_schema)
+        table.insert(diagnostics, _new_diag("warning", "unsupported-version-schema-exact-only", warn, "version_schema"))
+    end
+
+    return {
+        version = version,
+        compat_version = compat_version,
+        version_schema = version_schema,
+        version_exact_only = version_exact_only
+    }
+end
+
 function main(filepath, opt)
     opt = opt or {}
     local diagnostics = {}
@@ -264,11 +311,19 @@ function main(filepath, opt)
     local mapped = {
         package = {
             name = cpsdata.name,
-            version = cpsdata.version,
             prefix = prefix
         },
         components = {}
     }
+
+    local version_info, version_error = _map_version_info(cpsdata, diagnostics)
+    if not version_info then
+        return nil, diagnostics, version_error
+    end
+    mapped.package.version = version_info.version
+    mapped.package.compat_version = version_info.compat_version
+    mapped.package.version_schema = version_info.version_schema
+    mapped.package.version_exact_only = version_info.version_exact_only
 
     local selected_components, selection_error = _select_components(cpsdata, opt, diagnostics)
     if not selected_components then

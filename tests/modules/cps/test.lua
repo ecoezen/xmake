@@ -7,7 +7,10 @@ local function _assert_fixtures(scriptdir)
         "valid-components.cps",
         "malformed-missing-name.cps",
         "unsupported-field.cps",
-        "config-selection.cps"
+        "config-selection.cps",
+        "version-semantics.cps",
+        "version-unsupported-schema.cps",
+        "version-missing.cps"
     }
     local fixturesdir = path.join(scriptdir, "fixtures")
     for _, filename in ipairs(fixtures) do
@@ -143,4 +146,34 @@ function test_cps_configuration_selection(t)
     local seam_items = package_impl.load_requires(seam_requires, seam_extra, {})
     t:are_equal(#seam_items, 1)
     t:are_equal(seam_items[1].info.cpsinfo.package.selected_configuration, "debug")
+end
+
+function test_cps_version_semantics(t)
+    local scriptdir = path.directory(t.filename)
+
+    local version_file = path.join(scriptdir, "fixtures", "version-semantics.cps")
+    local version_mapped, version_diags = cps(version_file)
+    t:require(version_mapped)
+    t:are_equal(version_mapped.package.version, "2.4.1")
+    t:are_equal(version_mapped.package.compat_version, "2.1.0")
+    t:are_equal(version_mapped.package.version_schema, "simple")
+    t:are_equal(version_mapped.package.version_exact_only, false)
+    t:are_equal(#version_diags, 0)
+
+    local unsupported_file = path.join(scriptdir, "fixtures", "version-unsupported-schema.cps")
+    local unsupported_mapped, unsupported_diags = cps(unsupported_file)
+    t:require(unsupported_mapped)
+    t:are_equal(unsupported_mapped.package.version_schema, "pep440")
+    t:are_equal(unsupported_mapped.package.version_exact_only, true)
+    t:require(#unsupported_diags > 0)
+    t:are_equal(unsupported_diags[1].code, "unsupported-version-schema-exact-only")
+
+    local missing_file = path.join(scriptdir, "fixtures", "version-missing.cps")
+    local missing_mapped, missing_diags = cps(missing_file)
+    t:require(missing_mapped)
+    t:are_equal(missing_mapped.package.version, nil)
+    t:are_equal(missing_mapped.package.compat_version, nil)
+    t:are_equal(missing_mapped.package.version_exact_only, true)
+    t:require(#missing_diags > 0)
+    t:are_equal(missing_diags[1].code, "missing-version-exact-only")
 end
