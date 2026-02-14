@@ -61,6 +61,19 @@ local function _to_string_array(value)
     return result
 end
 
+local function _join_unique(dst, src)
+    local exists = {}
+    for _, item in ipairs(dst) do
+        exists[item] = true
+    end
+    for _, item in ipairs(src) do
+        if not exists[item] then
+            table.insert(dst, item)
+            exists[item] = true
+        end
+    end
+end
+
 function main(filepath, opt)
     opt = opt or {}
     local diagnostics = {}
@@ -109,11 +122,47 @@ function main(filepath, opt)
                 table.insert(diagnostics, _new_diag("error", "invalid-requires", err, "components." .. component_name .. ".requires"))
                 return nil, diagnostics, err
             end
+            local compile_requires = _to_string_array(component.compile_requires)
+            if compile_requires == nil then
+                local err = string.format("component '%s' has invalid compile_requires (expect array of strings)", component_name)
+                table.insert(diagnostics, _new_diag("error", "invalid-compile-requires", err, "components." .. component_name .. ".compile_requires"))
+                return nil, diagnostics, err
+            end
+            local link_requires = _to_string_array(component.link_requires)
+            if link_requires == nil then
+                local err = string.format("component '%s' has invalid link_requires (expect array of strings)", component_name)
+                table.insert(diagnostics, _new_diag("error", "invalid-link-requires", err, "components." .. component_name .. ".link_requires"))
+                return nil, diagnostics, err
+            end
+            local dyld_requires = _to_string_array(component.dyld_requires)
+            if dyld_requires == nil then
+                local err = string.format("component '%s' has invalid dyld_requires (expect array of strings)", component_name)
+                table.insert(diagnostics, _new_diag("error", "invalid-dyld-requires", err, "components." .. component_name .. ".dyld_requires"))
+                return nil, diagnostics, err
+            end
             local includes = _to_string_array(component.includes)
             if includes == nil then
                 local err = string.format("component '%s' has invalid includes (expect array of strings)", component_name)
                 table.insert(diagnostics, _new_diag("error", "invalid-includes", err, "components." .. component_name .. ".includes"))
                 return nil, diagnostics, err
+            end
+            if opt.stage_requires_fallback then
+                local staged_count = #compile_requires + #link_requires + #dyld_requires
+                if staged_count > 0 then
+                    _join_unique(requires, compile_requires)
+                    _join_unique(requires, link_requires)
+                    _join_unique(requires, dyld_requires)
+                    local warn = string.format("component '%s' stage-specific requires are degraded into requires", component_name)
+                    table.insert(diagnostics, _new_diag("warning", "degraded-stage-requires", warn, "components." .. component_name))
+                end
+            end
+            if opt.known_requires and #requires > 0 then
+                for _, require_name in ipairs(requires) do
+                    if require_name:find("::", 1, true) and not opt.known_requires[require_name] then
+                        local warn = string.format("component '%s' unresolved require '%s' uses fallback", component_name, require_name)
+                        table.insert(diagnostics, _new_diag("warning", "unknown-require-fallback", warn, "components." .. component_name .. ".requires"))
+                    end
+                end
             end
             for i, value in ipairs(includes) do
                 includes[i] = _resolve_prefix(value, prefix)
@@ -121,6 +170,9 @@ function main(filepath, opt)
             mapped.components[component_name] = {
                 type = component.type,
                 requires = requires,
+                compile_requires = compile_requires,
+                link_requires = link_requires,
+                dyld_requires = dyld_requires,
                 includes = includes,
                 location = _resolve_prefix(component.location, prefix)
             }
