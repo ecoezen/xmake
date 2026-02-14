@@ -4,7 +4,8 @@ local function _assert_fixtures(scriptdir)
     local fixtures = {
         "install-with-cps.cps",
         "fetch-with-fallback.cps",
-        "absent-cps-fallback.cps"
+        "absent-cps-fallback.cps",
+        "xmake-export-roundtrip.cps"
     }
     local fixturesdir = path.join(scriptdir, "fixtures")
     for _, filename in ipairs(fixtures) do
@@ -34,4 +35,12 @@ function main(t)
     t:require(absent_mapped)
     t:require(#absent_diags > 0)
     t:are_equal(absent_diags[1].code, "empty-components-fallback")
+
+    local roundtrip_file = path.join(scriptdir, "fixtures", "xmake-export-roundtrip.cps")
+    local roundtrip_mapped, roundtrip_diags = cps(roundtrip_file, {prefix = "C:/xrepo/packages/zlib"})
+    t:require(roundtrip_mapped)
+    t:are_equal(roundtrip_mapped.package.name, "zlib")
+    t:are_equal(roundtrip_mapped.package.selected_components, {"zlib"})
+    t:are_equal(roundtrip_mapped.components.zlib.location, path.join("C:/xrepo/packages/zlib", "lib", "zlib.lib"))
+    t:are_equal(#roundtrip_diags, 0)
 end

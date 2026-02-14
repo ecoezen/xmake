@@ -6,7 +6,13 @@ end
 
 local function _assert_fixtures(scriptdir)
     local fixtures =
-        {"exported-layout.cps", "cmake-consume-smoke.cps", "windows-relocation.cps", "mixed-cps-noncps.cps"}
+        {
+            "exported-layout.cps",
+            "cmake-consume-smoke.cps",
+            "windows-relocation.cps",
+            "mixed-cps-noncps.cps",
+            "cmake-produced-with-hints.cps"
+        }
     local fixturesdir = path.join(scriptdir, "fixtures")
     for _, filename in ipairs(fixtures) do
         assert(os.isfile(path.join(fixturesdir, filename)), "missing cps interop fixture: " .. filename)
@@ -40,4 +46,13 @@ function main(t)
     t:require(mixed_mapped)
     t:require(#mixed_diags > 0)
     t:are_equal(mixed_diags[1].code, "unknown-require-fallback")
+
+    local hinted_file = path.join(scriptdir, "fixtures", "cmake-produced-with-hints.cps")
+    local hinted_mapped, hinted_diags = cps(hinted_file)
+    t:require(hinted_mapped)
+    t:are_equal(hinted_mapped.package.name, "cmake-upstream")
+    t:require(hinted_mapped.package.requires.zlib)
+    t:are_equal(hinted_mapped.package.requires.zlib.components, {"zlib"})
+    t:are_equal(hinted_mapped.package.requires.zlib.hints, {"C:/vendor/zlib", "D:/cache/zlib"})
+    t:are_equal(#hinted_diags, 0)
 end
