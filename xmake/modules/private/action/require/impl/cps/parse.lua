@@ -61,6 +61,152 @@ local function _to_string_array(value)
     return result
 end
 
+local function _discover_supplemental_configurations(filepath, packagename)
+    local result = {}
+    local result_set = {}
+    local basedir = path.directory(filepath)
+    local basename = path.filename(filepath)
+    local patterns = {packagename .. "*.cps", packagename:lower() .. "*.cps"}
+    for _, pattern in ipairs(patterns) do
+        for _, configfile in ipairs(os.files(path.join(basedir, pattern))) do
+            local current_basename = path.filename(configfile)
+            local key = current_basename:lower()
+            if current_basename ~= basename and not result_set[key] then
+                local stem = path.basename(current_basename)
+                local suffix = stem:sub(#packagename + 1)
+                local starts_with_separator = suffix and #suffix > 0 and (suffix:startswith("@") or suffix:startswith("-") or suffix:startswith(":"))
+                if starts_with_separator then
+                    local config_name = suffix:match(".*@([^@]+)$")
+                    table.insert(result, {filepath = configfile, config_name = config_name})
+                    result_set[key] = true
+                end
+            end
+        end
+    end
+    table.sort(result, function (a, b)
+        return a.filepath < b.filepath
+    end)
+    return result
+end
+
+local function _count_table_entries(tbl)
+    local count = 0
+    for _, _ in pairs(tbl or {}) do
+        count = count + 1
+    end
+    return count
+end
+
+local function _select_supplemental_configuration(cpsdata, opt, candidates)
+    local selected_configurations = _to_string_array(opt.configurations)
+    if selected_configurations then
+        for _, config_name in ipairs(selected_configurations) do
+            if candidates[config_name] then
+                return config_name
+            end
+        end
+    end
+    local package_preferred = _to_string_array(cpsdata.configurations)
+    if package_preferred then
+        for _, config_name in ipairs(package_preferred) do
+            if candidates[config_name] then
+                return config_name
+            end
+        end
+    end
+    if _count_table_entries(candidates) == 1 then
+        for config_name, _ in pairs(candidates) do
+            return config_name
+        end
+    end
+    return nil
+end
+
+local function _merge_component_attributes(dst_component, src_component)
+    for attribute_name, value in pairs(src_component or {}) do
+        dst_component[attribute_name] = value
+    end
+end
+
+local function _apply_supplemental_entries(cpsdata, entries, selected_config)
+    for _, entry in ipairs(entries) do
+        if entry.config_name == selected_config then
+            local supplement = entry.supplement
+            for component_name, component_overlay in pairs(supplement.components) do
+                local component = cpsdata.components[component_name]
+                if type(component) ~= "table" then
+                    component = {}
+                    cpsdata.components[component_name] = component
+                end
+                if entry.config_name then
+                    component.configurations = component.configurations or {}
+                    component.configurations[entry.config_name] = component.configurations[entry.config_name] or {}
+                    _merge_component_attributes(component.configurations[entry.config_name], component_overlay)
+                else
+                    _merge_component_attributes(component, component_overlay)
+                end
+            end
+        end
+    end
+end
+
+local function _apply_supplemental_configuration(cpsdata, filepath, opt, diagnostics)
+    local discovered = _discover_supplemental_configurations(filepath, cpsdata.name)
+    if #discovered == 0 then
+        return
+    end
+
+    local loaded = {}
+    local candidates = {}
+    for _, entry in ipairs(discovered) do
+        local supplement, errors = json.loadfile(entry.filepath)
+        if not supplement then
+            table.insert(diagnostics, _new_diag("warning", "supplemental-configuration-load-failed",
+                string.format("failed to load supplemental configuration '%s': %s", entry.config_name or path.filename(entry.filepath), errors or "unknown errors"),
+                "configurations"))
+        elseif type(supplement) ~= "table" or type(supplement.components) ~= "table" then
+            table.insert(diagnostics, _new_diag("warning", "supplemental-configuration-invalid",
+                string.format("supplemental configuration '%s' is invalid", entry.config_name or path.filename(entry.filepath)), "configurations"))
+        else
+            entry.supplement = supplement
+            table.insert(loaded, entry)
+            if entry.config_name then
+                candidates[entry.config_name] = true
+            end
+        end
+    end
+
+    _apply_supplemental_entries(cpsdata, loaded, nil)
+
+    if _count_table_entries(candidates) == 0 then
+        return
+    end
+
+    local selected = _select_supplemental_configuration(cpsdata, opt, candidates)
+    if not selected then
+        table.insert(diagnostics, _new_diag("warning", "supplemental-configuration-not-selected",
+            "supplemental cps configurations were found but no configuration could be selected", "configurations"))
+        return
+    end
+
+    _apply_supplemental_entries(cpsdata, loaded, selected)
+
+    if type(cpsdata.configurations) ~= "table" then
+        cpsdata.configurations = {selected}
+    elseif not table.contains(cpsdata.configurations, selected) then
+        table.insert(cpsdata.configurations, 1, selected)
+    end
+    local applied_files = {}
+    for _, entry in ipairs(loaded) do
+        if entry.config_name == selected then
+            table.insert(applied_files, path.filename(entry.filepath))
+        end
+    end
+    table.insert(diagnostics, _new_diag("warning", "supplemental-configuration-applied",
+        string.format("applied supplemental configuration '%s' from %s", selected, table.concat(applied_files, ", ")),
+        "configurations"))
+end
+
 local function _join_unique(dst, src)
     local exists = {}
     for _, item in ipairs(dst) do
@@ -349,6 +495,8 @@ function main(filepath, opt)
     if cpsdata.extensions ~= nil then
         table.insert(diagnostics, _new_diag("warning", "unsupported-field", "extensions is not mapped in L1", "extensions"))
     end
+
+    _apply_supplemental_configuration(cpsdata, filepath, opt, diagnostics)
 
     local prefix = opt.prefix or cpsdata.prefix
     if prefix == "${prefix}" then

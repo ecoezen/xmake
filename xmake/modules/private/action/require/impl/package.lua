@@ -117,10 +117,14 @@ function _load_require(require_str, requires_extra, opt)
         end
     end
 
+    local cps_manager_packagename = nil
+
     -- force cps manager flow for cps metadata format
     if require_format == "cps" then
         if not packagename:find("::", 1, true) then
-            packagename = "cps::" .. packagename
+            cps_manager_packagename = "cps::" .. packagename
+        else
+            cps_manager_packagename = packagename
         end
         require_extra.system = true
         require_extra.configs = require_extra.configs or {}
@@ -128,6 +132,7 @@ function _load_require(require_str, requires_extra, opt)
         require_extra.configs.cps_prefix = require_extra.prefix
         require_extra.configs.cps_components = require_extra.components
         require_extra.configs.cps_configurations = require_extra.cps_configurations
+        require_extra.configs.cps_packagename = cps_manager_packagename
     end
 
     -- resolve require info
@@ -212,6 +217,8 @@ function _load_require(require_str, requires_extra, opt)
         build            = require_extra.build,     -- default: false, always build packages, we do not use the precompiled artifacts
         resolvedinfo     = resolvedinfo,            -- the resolved info for the conflict version/configs
         format           = require_format,          -- package metadata format, e.g. cps
+        manager_name     = require_format == "cps" and "cps" or nil,
+        manager_package  = cps_manager_packagename,
         cpsinfo          = cpsinfo,                 -- parsed cps mapping data
         cpsdiagnostics   = cpsdiagnostics           -- cps parse diagnostics
     }
@@ -1013,7 +1020,11 @@ function _load_package(packagename, requireinfo, opt)
         system = opt.system
     end
     if not package and (system ~= false or packagename:find("::", 1, true)) then
-        package = _load_package_from_system(packagename)
+        local system_packagename = packagename
+        if requireinfo.format == "cps" and requireinfo.manager_package then
+            system_packagename = requireinfo.manager_package
+        end
+        package = _load_package_from_system(system_packagename)
     end
 
     -- check unknown package
