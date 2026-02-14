@@ -12,7 +12,8 @@ local function _assert_fixtures(scriptdir)
     local fixtures = {"valid-single.cps", "valid-components.cps", "malformed-missing-name.cps", "unsupported-field.cps",
                       "config-selection.cps", "version-semantics.cps", "version-unsupported-schema.cps",
                       "version-missing.cps", "package-requires.cps", "package-requires-invalid.cps", "stage-policy.cps",
-                      "suppmerge.cps", "suppmerge-extra.cps", "suppmerge-tools@release.cps"}
+                      "suppmerge.cps", "suppmerge-extra.cps", "suppmerge-tools@release.cps", "cps-example-libfoo.cps",
+                      "cps-example-libbar.cps", "cps-example-libexample.cps"}
     local fixturesdir = path.join(scriptdir, "fixtures")
     for _, filename in ipairs(fixtures) do
         assert(os.isfile(path.join(fixturesdir, filename)), "missing cps fixture: " .. filename)
@@ -266,4 +267,55 @@ function test_cps_supplemental_merge_patterns(t)
         end
     end
     t:require(found_applied_diag)
+end
+
+function test_cps_examples_interdependency_mapping(t)
+    local scriptdir = path.directory(t.filename)
+    local prefix = "C:/opt/cps-examples"
+    local function _normpath(value)
+        return value and value:gsub("\\", "/") or value
+    end
+
+    local libfoo_file = path.join(scriptdir, "fixtures", "cps-example-libfoo.cps")
+    local libfoo_mapped, libfoo_diags = cps(libfoo_file, {prefix = prefix})
+    t:require(libfoo_mapped)
+    t:are_equal(libfoo_mapped.package.name, "libfoo")
+    t:are_equal(libfoo_mapped.package.version, "1.0.0")
+    t:are_equal(libfoo_mapped.components.libfoo.requires, {})
+    t:are_equal(_normpath(libfoo_mapped.components.libfoo.location), _normpath(path.join(prefix, "lib", "libfoo.a")))
+    t:are_equal(#libfoo_diags, 0)
+
+    local libbar_file = path.join(scriptdir, "fixtures", "cps-example-libbar.cps")
+    local libbar_mapped, libbar_diags = cps(libbar_file, {prefix = prefix})
+    t:require(libbar_mapped)
+    t:are_equal(libbar_mapped.package.name, "libbar")
+    t:require(libbar_mapped.package.requires.libfoo)
+    t:are_equal(libbar_mapped.package.requires.libfoo.version, "1.0.0")
+    t:are_equal(libbar_mapped.components.libbar.requires, {"libfoo:libfoo"})
+    t:are_equal(_normpath(libbar_mapped.components.libbar.location), _normpath(path.join(prefix, "lib", "libbar.so")))
+    t:are_equal(#libbar_diags, 0)
+
+    local libexample_file = path.join(scriptdir, "fixtures", "cps-example-libexample.cps")
+    local libexample_mapped, libexample_diags = cps(libexample_file, {prefix = prefix})
+    t:require(libexample_mapped)
+    t:are_equal(libexample_mapped.package.name, "libexample")
+    t:require(libexample_mapped.package.requires.libfoo)
+    t:require(libexample_mapped.package.requires.libbar)
+    t:are_equal(libexample_mapped.package.requires.libfoo.version, "1.0.0")
+    t:are_equal(libexample_mapped.package.requires.libbar.version, "2.1.0")
+    t:are_equal(libexample_mapped.components.libexample.requires, {"libfoo:libfoo", "libbar:libbar"})
+    t:are_equal(_normpath(libexample_mapped.components.libexample.location), _normpath(path.join(prefix, "lib", "libexample.a")))
+    t:are_equal(#libexample_diags, 0)
+
+    local seam_requires = {libexample_file}
+    local seam_extra = {}
+    seam_extra[libexample_file] = {format = "cps", prefix = prefix}
+    local seam_items = package_impl.load_requires(seam_requires, seam_extra, {})
+    t:are_equal(#seam_items, 1)
+    t:are_equal(seam_items[1].name, "libexample")
+    t:are_equal(seam_items[1].info.format, "cps")
+    t:require(seam_items[1].info.cpsinfo.package.requires.libfoo)
+    t:require(seam_items[1].info.cpsinfo.package.requires.libbar)
+    t:are_equal(seam_items[1].info.cpsinfo.package.requires.libfoo.version, "1.0.0")
+    t:are_equal(seam_items[1].info.cpsinfo.package.requires.libbar.version, "2.1.0")
 end

@@ -449,9 +449,20 @@ local function _map_package_requires(cpsdata, diagnostics)
             return nil, err
         end
 
+        local requirement_version = requirement.version
+        if requirement_version ~= nil and requirement_version ~= json.null and type(requirement_version) ~= "string" then
+            local err = string.format("invalid requirement version for package '%s' (expect string)", package_name)
+            table.insert(diagnostics, _new_diag("error", "invalid-package-requirement-version", err, "requires." .. package_name .. ".version"))
+            return nil, err
+        end
+        if requirement_version == json.null then
+            requirement_version = nil
+        end
+
         mapped_requires[package_name] = {
             components = components,
-            hints = hints
+            hints = hints,
+            version = requirement_version
         }
     end
     return mapped_requires
