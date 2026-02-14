@@ -1,4 +1,4 @@
-import("parse", {rootdir = path.join(os.scriptdir(), "..", "..", "..", "..", "xmake", "modules", "private", "action", "require", "impl", "cps"), alias = "cps"})
+import("parse", {rootdir = path.join(os.scriptdir(), "..", "..", "..", "..", "..", "xmake", "modules", "private", "action", "require", "impl", "cps"), alias = "cps"})
 
 local function _normpath(value)
     return value and value:gsub("\\", "/") or value
