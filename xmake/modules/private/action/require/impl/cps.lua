@@ -96,6 +96,14 @@ function main(filepath, opt)
         table.insert(diagnostics, _new_diag("error", "missing-components", err, "components"))
         return nil, diagnostics, err
     end
+    local has_components = false
+    for _, _ in pairs(cpsdata.components) do
+        has_components = true
+        break
+    end
+    if not has_components then
+        table.insert(diagnostics, _new_diag("warning", "empty-components-fallback", "components is empty, fallback to non-cps flows", "components"))
+    end
     if cpsdata.extensions ~= nil then
         table.insert(diagnostics, _new_diag("warning", "unsupported-field", "extensions is not mapped in L1", "extensions"))
     end
