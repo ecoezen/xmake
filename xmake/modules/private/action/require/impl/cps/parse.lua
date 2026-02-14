@@ -264,6 +264,53 @@ local function _map_version_info(cpsdata, diagnostics)
     }
 end
 
+local function _map_package_requires(cpsdata, diagnostics)
+    if cpsdata.requires == nil then
+        return {}
+    end
+    if type(cpsdata.requires) ~= "table" then
+        local err = "invalid package requires (expect map(requirement))"
+        table.insert(diagnostics, _new_diag("error", "invalid-package-requires", err, "requires"))
+        return nil, err
+    end
+
+    local mapped_requires = {}
+    for package_name, requirement in pairs(cpsdata.requires) do
+        if type(package_name) ~= "string" or package_name == "" then
+            local err = "invalid package requires key (expect non-empty package name)"
+            table.insert(diagnostics, _new_diag("error", "invalid-package-require-name", err, "requires"))
+            return nil, err
+        end
+        if requirement == json.null or requirement == nil then
+            requirement = {}
+        end
+        if type(requirement) ~= "table" then
+            local err = string.format("invalid requirement object for package '%s'", package_name)
+            table.insert(diagnostics, _new_diag("error", "invalid-package-requirement", err, "requires." .. package_name))
+            return nil, err
+        end
+
+        local components = _to_string_array(requirement.components)
+        if components == nil then
+            local err = string.format("invalid requirement components for package '%s' (expect array of strings)", package_name)
+            table.insert(diagnostics, _new_diag("error", "invalid-package-requirement-components", err, "requires." .. package_name .. ".components"))
+            return nil, err
+        end
+        local hints = _to_string_array(requirement.hints)
+        if hints == nil then
+            local err = string.format("invalid requirement hints for package '%s' (expect array of strings)", package_name)
+            table.insert(diagnostics, _new_diag("error", "invalid-package-requirement-hints", err, "requires." .. package_name .. ".hints"))
+            return nil, err
+        end
+
+        mapped_requires[package_name] = {
+            components = components,
+            hints = hints
+        }
+    end
+    return mapped_requires
+end
+
 function main(filepath, opt)
     opt = opt or {}
     local diagnostics = {}
@@ -324,6 +371,12 @@ function main(filepath, opt)
     mapped.package.compat_version = version_info.compat_version
     mapped.package.version_schema = version_info.version_schema
     mapped.package.version_exact_only = version_info.version_exact_only
+
+    local package_requires, package_requires_error = _map_package_requires(cpsdata, diagnostics)
+    if not package_requires then
+        return nil, diagnostics, package_requires_error
+    end
+    mapped.package.requires = package_requires
 
     local selected_components, selection_error = _select_components(cpsdata, opt, diagnostics)
     if not selected_components then

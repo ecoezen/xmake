@@ -10,7 +10,9 @@ local function _assert_fixtures(scriptdir)
         "config-selection.cps",
         "version-semantics.cps",
         "version-unsupported-schema.cps",
-        "version-missing.cps"
+        "version-missing.cps",
+        "package-requires.cps",
+        "package-requires-invalid.cps"
     }
     local fixturesdir = path.join(scriptdir, "fixtures")
     for _, filename in ipairs(fixtures) do
@@ -176,4 +178,24 @@ function test_cps_version_semantics(t)
     t:are_equal(missing_mapped.package.version_exact_only, true)
     t:require(#missing_diags > 0)
     t:are_equal(missing_diags[1].code, "missing-version-exact-only")
+end
+
+function test_cps_package_requires_mapping(t)
+    local scriptdir = path.directory(t.filename)
+
+    local requires_file = path.join(scriptdir, "fixtures", "package-requires.cps")
+    local requires_mapped, requires_diags = cps(requires_file)
+    t:require(requires_mapped)
+    t:require(requires_mapped.package.requires)
+    t:are_equal(requires_mapped.package.requires.zlib.components, {"zlib"})
+    t:are_equal(requires_mapped.package.requires.zlib.hints, {"C:/deps/zlib", "D:/cache/zlib"})
+    t:are_equal(requires_mapped.package.requires.openssl.components, {})
+    t:are_equal(requires_mapped.package.requires.openssl.hints, {})
+    t:are_equal(#requires_diags, 0)
+
+    local invalid_file = path.join(scriptdir, "fixtures", "package-requires-invalid.cps")
+    local invalid_mapped, invalid_diags, invalid_errors = cps(invalid_file)
+    t:are_equal(invalid_mapped, nil)
+    t:require(invalid_errors)
+    t:are_equal(invalid_diags[1].code, "invalid-package-requirement-hints")
 end
