@@ -32,6 +32,7 @@ import("core.platform.platform")
 import("core.package.package", {alias = "core_package"})
 import("devel.git")
 import("private.action.require.impl.check_api")
+import("parse", {rootdir = path.join(os.scriptdir(), "cps"), alias = "cps_parse"})
 import("private.action.require.impl.repository")
 import("private.action.require.impl.search_packages")
 import("private.action.require.impl.utils.requirekey", {alias = "_get_requirekey"})
@@ -46,13 +47,34 @@ end
 function _load_require(require_str, requires_extra, opt)
     opt = opt or {}
 
-    -- parse require
-    local packagename, version, reponame = package_utils.parse_requirestr(require_str)
-
     -- get require extra
     local require_extra = {}
     if requires_extra then
         require_extra = requires_extra[require_str] or {}
+    end
+
+    -- parse require
+    local packagename, version, reponame
+    local cpsinfo, cpsdiagnostics
+    if require_extra.format == "cps" then
+        local errors
+        cpsinfo, cpsdiagnostics, errors = cps_parse(require_str,
+            {prefix = require_extra.prefix, stage_requires_fallback = require_extra.stage_requires_fallback})
+        if not cpsinfo then
+            raise("add_requires(\"%s\"): parse cps failed, %s", require_str, errors or "unknown errors")
+        end
+        packagename = cpsinfo.package and cpsinfo.package.name
+        version = cpsinfo.package and cpsinfo.package.version or "latest"
+        if not packagename then
+            raise("add_requires(\"%s\"): parse cps failed, package name not found", require_str)
+        end
+        for _, diag in ipairs(cpsdiagnostics or {}) do
+            if diag.level == "warning" then
+                wprint("add_requires(\"%s\"): %s", require_str, diag.message)
+            end
+        end
+    else
+        packagename, version, reponame = package_utils.parse_requirestr(require_str)
     end
 
     -- parse configs from package name, and we need to ignore 3rd package name, e.g. vcpkg::boost[core], ...
@@ -127,7 +149,8 @@ function _load_require(require_str, requires_extra, opt)
     -- check require options
     local extra_options = hashset.of("plat", "arch", "kind", "host", "targetos",
     "alias", "group", "system", "option", "default", "optional", "debug",
-    "verify", "external", "private", "build", "configs", "version", "public")
+    "verify", "external", "private", "build", "configs", "version", "public",
+    "format", "prefix", "stage_requires_fallback")
     for name, value in pairs(require_extra) do
         if not extra_options:has(name) then
             wprint("add_requires(\"%s\") has unknown option: {%s=%s}!", require_str, name, tostring(value))
@@ -167,7 +190,10 @@ function _load_require(require_str, requires_extra, opt)
         external         = require_extra.external,  -- default: true, we use sysincludedirs/-isystem instead of -I/xxx
         private          = require_extra.private,   -- default: false, private package, only for installation, do not export any links/includes and environments
         build            = require_extra.build,     -- default: false, always build packages, we do not use the precompiled artifacts
-        resolvedinfo     = resolvedinfo             -- the resolved info for the conflict version/configs
+        resolvedinfo     = resolvedinfo,            -- the resolved info for the conflict version/configs
+        format           = require_extra.format,    -- package metadata format, e.g. cps
+        cpsinfo          = cpsinfo,                 -- parsed cps mapping data
+        cpsdiagnostics   = cpsdiagnostics           -- cps parse diagnostics
     }
     return required.packagename, required.requireinfo
 end

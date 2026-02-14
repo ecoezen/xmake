@@ -1,4 +1,5 @@
 import("parse", {rootdir = path.join(os.scriptdir(), "..", "..", "..", "xmake", "modules", "private", "action", "require", "impl", "cps"), alias = "cps"})
+import("package", {rootdir = path.join(os.scriptdir(), "..", "..", "..", "xmake", "modules", "private", "action", "require", "impl"), alias = "package_impl"})
 
 local function _assert_fixtures(scriptdir)
     local fixtures = {
@@ -45,4 +46,18 @@ function test_cps_parser_mapping_skeleton(t)
     t:require(unsupported_result)
     t:require(#unsupported_diags > 0)
     t:are_equal(unsupported_diags[1].code, "unsupported-field")
+end
+
+function test_cps_require_load_seam(t)
+    local scriptdir = path.directory(t.filename)
+    local cpsfile = path.join(scriptdir, "fixtures", "valid-single.cps")
+    local requires = {cpsfile}
+    local requires_extra = {}
+    requires_extra[cpsfile] = {format = "cps", prefix = "C:/deps/zlib"}
+    local requireitems = package_impl.load_requires(requires, requires_extra, {})
+    t:are_equal(#requireitems, 1)
+    t:are_equal(requireitems[1].name, "zlib")
+    t:are_equal(requireitems[1].info.format, "cps")
+    t:require(requireitems[1].info.cpsinfo)
+    t:are_equal(requireitems[1].info.cpsinfo.components.zlib.location, path.join("C:/deps/zlib", "lib", "zlib.lib"))
 end
