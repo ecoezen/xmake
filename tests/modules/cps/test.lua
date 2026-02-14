@@ -12,7 +12,8 @@ local function _assert_fixtures(scriptdir)
         "version-unsupported-schema.cps",
         "version-missing.cps",
         "package-requires.cps",
-        "package-requires-invalid.cps"
+        "package-requires-invalid.cps",
+        "stage-policy.cps"
     }
     local fixturesdir = path.join(scriptdir, "fixtures")
     for _, filename in ipairs(fixtures) do
@@ -198,4 +199,23 @@ function test_cps_package_requires_mapping(t)
     t:are_equal(invalid_mapped, nil)
     t:require(invalid_errors)
     t:are_equal(invalid_diags[1].code, "invalid-package-requirement-hints")
+end
+
+function test_cps_stage_requires_policy(t)
+    local scriptdir = path.directory(t.filename)
+    local stage_file = path.join(scriptdir, "fixtures", "stage-policy.cps")
+
+    local preserved_mapped, preserved_diags = cps(stage_file)
+    t:require(preserved_mapped)
+    t:are_equal(preserved_mapped.components.net.compile_requires, {"openssl::crypto"})
+    t:are_equal(preserved_mapped.components.net.link_requires, {"openssl::ssl"})
+    t:are_equal(preserved_mapped.components.net.dyld_requires, {"openssl::ssl"})
+    t:are_equal(preserved_mapped.components.net.requires, {})
+    t:are_equal(#preserved_diags, 0)
+
+    local degraded_mapped, degraded_diags = cps(stage_file, {stage_requires_fallback = true})
+    t:require(degraded_mapped)
+    t:are_equal(degraded_mapped.components.net.requires, {"openssl::crypto", "openssl::ssl"})
+    t:require(#degraded_diags > 0)
+    t:are_equal(degraded_diags[1].code, "degraded-stage-requires")
 end
