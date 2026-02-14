@@ -61,9 +61,11 @@ function _load_require(require_str, requires_extra, opt)
     -- parse require
     local packagename, version, reponame
     local cpsinfo, cpsdiagnostics
-    if require_format == "cps" then
+    local cps_sourcepath
+    if require_format == "cps" and (require_str:endswith(".cps") or os.isfile(require_str)) then
+        cps_sourcepath = require_str
         local errors
-        cpsinfo, cpsdiagnostics, errors = cps_parse(require_str,
+        cpsinfo, cpsdiagnostics, errors = cps_parse(cps_sourcepath,
             {prefix = require_extra.prefix, stage_requires_fallback = require_extra.stage_requires_fallback, components = require_extra.components, configurations = require_extra.cps_configurations})
         if not cpsinfo then
             raise("add_requires(\"%s\"): parse cps failed, %s", require_str, errors or "unknown errors")
@@ -113,6 +115,19 @@ function _load_require(require_str, requires_extra, opt)
                 configs[k] = true
             end
         end
+    end
+
+    -- force cps manager flow for cps metadata format
+    if require_format == "cps" then
+        if not packagename:find("::", 1, true) then
+            packagename = "cps::" .. packagename
+        end
+        require_extra.system = true
+        require_extra.configs = require_extra.configs or {}
+        require_extra.configs.cps_filepath = cps_sourcepath
+        require_extra.configs.cps_prefix = require_extra.prefix
+        require_extra.configs.cps_components = require_extra.components
+        require_extra.configs.cps_configurations = require_extra.cps_configurations
     end
 
     -- resolve require info
