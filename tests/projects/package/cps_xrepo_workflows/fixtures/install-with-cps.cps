@@ -1,4 +1,5 @@
 {
+  "cps_version": "0.13",
   "name": "libpng",
   "version": "1.6.43",
   "components": {

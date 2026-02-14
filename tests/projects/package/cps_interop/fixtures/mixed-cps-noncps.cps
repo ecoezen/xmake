@@ -1,4 +1,5 @@
 {
+  "cps_version": "0.13",
   "name": "hybrid-interop",
   "version": "0.3.0",
   "components": {

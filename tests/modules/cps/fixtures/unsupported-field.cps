@@ -1,4 +1,5 @@
 {
+  "cps_version": "0.13",
   "name": "demo",
   "version": "1.0.0",
   "extensions": {

@@ -1,4 +1,5 @@
 {
+  "cps_version": "0.13",
   "name": "hybrid",
   "version": "0.1.0",
   "components": {

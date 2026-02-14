@@ -1,4 +1,5 @@
 {
+  "cps_version": "0.13",
   "name": "netlib",
   "version": "1.0.0",
   "components": {

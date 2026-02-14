@@ -36,6 +36,7 @@ local function _resolve_prefix(value, prefix)
     if not prefix or prefix == "" then
         return value
     end
+    value = value:gsub("@prefix@", prefix)
     value = value:gsub("%${prefix}", prefix)
     if not path.is_absolute(value) and not value:find("%${prefix}", 1, true) then
         value = path.join(prefix, value)
@@ -88,6 +89,11 @@ function main(filepath, opt)
     if type(cpsdata.name) ~= "string" or cpsdata.name == "" then
         local err = "missing required field: name"
         table.insert(diagnostics, _new_diag("error", "missing-name", err, "name"))
+        return nil, diagnostics, err
+    end
+    if type(cpsdata.cps_version) ~= "string" or cpsdata.cps_version == "" then
+        local err = "missing required field: cps_version"
+        table.insert(diagnostics, _new_diag("error", "missing-cps-version", err, "cps_version"))
         return nil, diagnostics, err
     end
     if type(cpsdata.components) ~= "table" then

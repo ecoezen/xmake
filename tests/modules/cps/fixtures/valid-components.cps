@@ -1,4 +1,5 @@
 {
+  "cps_version": "0.13",
   "name": "openssl",
   "version": "3.2.0",
   "components": {
