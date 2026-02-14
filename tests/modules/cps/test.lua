@@ -1,4 +1,4 @@
-import("cps", {rootdir = path.join(os.scriptdir(), "..", "..", "..", "xmake", "modules", "private", "action", "require", "impl"), alias = "cps"})
+import("parse", {rootdir = path.join(os.scriptdir(), "..", "..", "..", "xmake", "modules", "private", "action", "require", "impl", "cps"), alias = "cps"})
 
 local function _assert_fixtures(scriptdir)
     local fixtures = {

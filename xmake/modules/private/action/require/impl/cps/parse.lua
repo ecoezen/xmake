@@ -14,11 +14,10 @@
 --
 -- Copyright (C) 2015-present, Xmake Open Source Community.
 --
--- @author      ruki
--- @file        cps.lua
+-- @author      Emin Can Özen (ecozen)
+-- @file        parse.lua
 --
 
--- imports
 import("core.base.json")
 
 local function _new_diag(level, code, message, field)
