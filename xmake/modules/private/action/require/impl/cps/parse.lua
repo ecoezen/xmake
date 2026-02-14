@@ -74,6 +74,149 @@ local function _join_unique(dst, src)
     end
 end
 
+local function _sorted_component_names(components)
+    local names = {}
+    for name, _ in pairs(components or {}) do
+        table.insert(names, name)
+    end
+    table.sort(names)
+    return names
+end
+
+local function _normalize_component_name(packagename, component_name)
+    if not component_name then
+        return nil
+    end
+    if component_name:startswith(packagename .. "::") then
+        return component_name:sub(#packagename + 3)
+    end
+    return component_name
+end
+
+local function _select_configuration(cpsdata, component, opt, diagnostics)
+    local component_configurations = component and component.configurations
+    if type(component_configurations) ~= "table" then
+        return nil
+    end
+    local preference = {}
+    local user_preference = _to_string_array(opt.configurations)
+    if user_preference == nil then
+        local err = "invalid selected configurations (expect array of strings)"
+        table.insert(diagnostics, _new_diag("error", "invalid-selected-configurations", err, "configurations"))
+        return nil, err
+    end
+    if user_preference then
+        for _, name in ipairs(user_preference) do
+            table.insert(preference, name)
+        end
+    end
+    local package_preference = _to_string_array(cpsdata.configurations)
+    if package_preference == nil then
+        local err = "invalid package configurations (expect array of strings)"
+        table.insert(diagnostics, _new_diag("error", "invalid-package-configurations", err, "configurations"))
+        return nil, err
+    end
+    if package_preference then
+        for _, name in ipairs(package_preference) do
+            table.insert(preference, name)
+        end
+    end
+    for _, name in ipairs(preference) do
+        if type(component_configurations[name]) == "table" then
+            return name
+        end
+    end
+    return nil
+end
+
+local function _has_key(tbl, key)
+    if type(tbl) ~= "table" then
+        return false
+    end
+    for current_key, _ in pairs(tbl) do
+        if current_key == key then
+            return true
+        end
+    end
+    return false
+end
+
+local function _get_component_attribute(component, configuration_name, attribute_name)
+    local configuration = nil
+    if configuration_name and type(component.configurations) == "table" then
+        configuration = component.configurations[configuration_name]
+    end
+    if type(configuration) == "table" and _has_key(configuration, attribute_name) then
+        local value = configuration[attribute_name]
+        if value == json.null then
+            return nil, true
+        end
+        return value, true
+    end
+    return component[attribute_name], false
+end
+
+local function _select_components(cpsdata, opt, diagnostics)
+    local selected = {}
+    local selected_set = {}
+    local components = cpsdata.components or {}
+    local component_names = _sorted_component_names(components)
+    if #component_names == 0 then
+        return {}
+    end
+    local explicit_components = _to_string_array(opt.components)
+    if explicit_components == nil then
+        local err = "invalid selected components (expect array of strings)"
+        table.insert(diagnostics, _new_diag("error", "invalid-selected-components", err, "components"))
+        return nil, err
+    end
+
+    if explicit_components and #explicit_components > 0 then
+        for _, name in ipairs(explicit_components) do
+            local normalized = _normalize_component_name(cpsdata.name, name)
+            if type(components[normalized]) ~= "table" then
+                local err = string.format("selected component '%s' not found", name)
+                table.insert(diagnostics, _new_diag("error", "missing-selected-component", err, "components"))
+                return nil, err
+            end
+            if not selected_set[normalized] then
+                table.insert(selected, normalized)
+                selected_set[normalized] = true
+            end
+        end
+        return selected
+    end
+
+    local defaults = _to_string_array(cpsdata.default_components)
+    if defaults == nil then
+        local err = "invalid default_components (expect array of strings)"
+        table.insert(diagnostics, _new_diag("error", "invalid-default-components", err, "default_components"))
+        return nil, err
+    end
+    if defaults and #defaults > 0 then
+        for _, name in ipairs(defaults) do
+            if type(components[name]) ~= "table" then
+                local err = string.format("default component '%s' not found", name)
+                table.insert(diagnostics, _new_diag("error", "missing-default-component", err, "default_components"))
+                return nil, err
+            end
+            if not selected_set[name] then
+                table.insert(selected, name)
+                selected_set[name] = true
+            end
+        end
+        return selected
+    end
+
+    if #component_names == 1 then
+        return {component_names[1]}
+    end
+
+    local err = "component selection required: provide explicit components or default_components"
+    table.insert(diagnostics, _new_diag("error", "component-selection-required", err, "components"))
+    return nil, err
+end
+
 function main(filepath, opt)
     opt = opt or {}
     local diagnostics = {}
@@ -127,37 +270,76 @@ function main(filepath, opt)
         components = {}
     }
 
+    local selected_components, selection_error = _select_components(cpsdata, opt, diagnostics)
+    if not selected_components then
+        return nil, diagnostics, selection_error
+    end
+    mapped.package.selected_components = selected_components
+    local selected_component_set = {}
+    for _, name in ipairs(selected_components) do
+        selected_component_set[name] = true
+    end
+    local selected_configuration = nil
+
     for component_name, component in pairs(cpsdata.components) do
-        if type(component) == "table" then
-            local requires = _to_string_array(component.requires)
+        if selected_component_set[component_name] and type(component) == "table" then
+            local configuration_name, configuration_error = _select_configuration(cpsdata, component, opt, diagnostics)
+            if configuration_error then
+                return nil, diagnostics, configuration_error
+            end
+            if configuration_name and not selected_configuration then
+                selected_configuration = configuration_name
+            end
+
+            local requires_value, requires_explicit = _get_component_attribute(component, configuration_name, "requires")
+            local requires = _to_string_array(requires_value)
             if requires == nil then
                 local err = string.format("component '%s' has invalid requires (expect array of strings)", component_name)
                 table.insert(diagnostics, _new_diag("error", "invalid-requires", err, "components." .. component_name .. ".requires"))
                 return nil, diagnostics, err
             end
-            local compile_requires = _to_string_array(component.compile_requires)
+            if not requires and requires_explicit then
+                requires = {}
+            end
+            local compile_requires_value, compile_requires_explicit = _get_component_attribute(component, configuration_name, "compile_requires")
+            local compile_requires = _to_string_array(compile_requires_value)
             if compile_requires == nil then
                 local err = string.format("component '%s' has invalid compile_requires (expect array of strings)", component_name)
                 table.insert(diagnostics, _new_diag("error", "invalid-compile-requires", err, "components." .. component_name .. ".compile_requires"))
                 return nil, diagnostics, err
             end
-            local link_requires = _to_string_array(component.link_requires)
+            if not compile_requires and compile_requires_explicit then
+                compile_requires = {}
+            end
+            local link_requires_value, link_requires_explicit = _get_component_attribute(component, configuration_name, "link_requires")
+            local link_requires = _to_string_array(link_requires_value)
             if link_requires == nil then
                 local err = string.format("component '%s' has invalid link_requires (expect array of strings)", component_name)
                 table.insert(diagnostics, _new_diag("error", "invalid-link-requires", err, "components." .. component_name .. ".link_requires"))
                 return nil, diagnostics, err
             end
-            local dyld_requires = _to_string_array(component.dyld_requires)
+            if not link_requires and link_requires_explicit then
+                link_requires = {}
+            end
+            local dyld_requires_value, dyld_requires_explicit = _get_component_attribute(component, configuration_name, "dyld_requires")
+            local dyld_requires = _to_string_array(dyld_requires_value)
             if dyld_requires == nil then
                 local err = string.format("component '%s' has invalid dyld_requires (expect array of strings)", component_name)
                 table.insert(diagnostics, _new_diag("error", "invalid-dyld-requires", err, "components." .. component_name .. ".dyld_requires"))
                 return nil, diagnostics, err
             end
-            local includes = _to_string_array(component.includes)
+            if not dyld_requires and dyld_requires_explicit then
+                dyld_requires = {}
+            end
+            local includes_value, includes_explicit = _get_component_attribute(component, configuration_name, "includes")
+            local includes = _to_string_array(includes_value)
             if includes == nil then
                 local err = string.format("component '%s' has invalid includes (expect array of strings)", component_name)
                 table.insert(diagnostics, _new_diag("error", "invalid-includes", err, "components." .. component_name .. ".includes"))
                 return nil, diagnostics, err
+            end
+            if not includes and includes_explicit then
+                includes = {}
             end
             if opt.stage_requires_fallback then
                 local staged_count = #compile_requires + #link_requires + #dyld_requires
@@ -180,6 +362,7 @@ function main(filepath, opt)
             for i, value in ipairs(includes) do
                 includes[i] = _resolve_prefix(value, prefix)
             end
+            local location = _get_component_attribute(component, configuration_name, "location")
             mapped.components[component_name] = {
                 type = component.type,
                 requires = requires,
@@ -187,9 +370,10 @@ function main(filepath, opt)
                 link_requires = link_requires,
                 dyld_requires = dyld_requires,
                 includes = includes,
-                location = _resolve_prefix(component.location, prefix)
+                location = _resolve_prefix(location, prefix)
             }
         end
     end
+    mapped.package.selected_configuration = selected_configuration
     return mapped, diagnostics
 end

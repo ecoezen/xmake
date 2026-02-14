@@ -2,6 +2,7 @@
   "cps_version": "0.13",
   "name": "openssl",
   "version": "3.2.0",
+  "default_components": ["ssl", "crypto"],
   "components": {
     "crypto": {
       "type": "archive",

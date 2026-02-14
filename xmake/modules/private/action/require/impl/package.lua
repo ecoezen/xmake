@@ -64,7 +64,7 @@ function _load_require(require_str, requires_extra, opt)
     if require_format == "cps" then
         local errors
         cpsinfo, cpsdiagnostics, errors = cps_parse(require_str,
-            {prefix = require_extra.prefix, stage_requires_fallback = require_extra.stage_requires_fallback})
+            {prefix = require_extra.prefix, stage_requires_fallback = require_extra.stage_requires_fallback, components = require_extra.components, configurations = require_extra.cps_configurations})
         if not cpsinfo then
             raise("add_requires(\"%s\"): parse cps failed, %s", require_str, errors or "unknown errors")
         end
@@ -155,7 +155,7 @@ function _load_require(require_str, requires_extra, opt)
     local extra_options = hashset.of("plat", "arch", "kind", "host", "targetos",
     "alias", "group", "system", "option", "default", "optional", "debug",
     "verify", "external", "private", "build", "configs", "version", "public",
-    "format", "prefix", "stage_requires_fallback")
+    "format", "prefix", "stage_requires_fallback", "components", "cps_configurations")
     for name, value in pairs(require_extra) do
         if not extra_options:has(name) then
             wprint("add_requires(\"%s\") has unknown option: {%s=%s}!", require_str, name, tostring(value))

@@ -6,7 +6,8 @@ local function _assert_fixtures(scriptdir)
         "valid-single.cps",
         "valid-components.cps",
         "malformed-missing-name.cps",
-        "unsupported-field.cps"
+        "unsupported-field.cps",
+        "config-selection.cps"
     }
     local fixturesdir = path.join(scriptdir, "fixtures")
     for _, filename in ipairs(fixtures) do
@@ -67,4 +68,79 @@ function test_cps_require_load_seam(t)
     t:are_equal(autodetect_items[1].name, "zlib")
     t:are_equal(autodetect_items[1].info.format, "cps")
     t:require(autodetect_items[1].info.cpsinfo)
+
+    local explicit_file = path.join(scriptdir, "fixtures", "component-explicit.cps")
+    local explicit_requires = {explicit_file}
+    local explicit_extra = {}
+    explicit_extra[explicit_file] = {format = "cps", components = {"crypto"}}
+    local explicit_items = package_impl.load_requires(explicit_requires, explicit_extra, {})
+    t:are_equal(#explicit_items, 1)
+    t:are_equal(explicit_items[1].name, "openssl")
+    t:are_equal(explicit_items[1].info.cpsinfo.package.selected_components, {"crypto"})
+end
+
+function test_cps_component_selection(t)
+    local scriptdir = path.directory(t.filename)
+
+    local by_default_file = path.join(scriptdir, "fixtures", "component-default.cps")
+    local mapped_default = cps(by_default_file)
+    t:require(mapped_default)
+    t:are_equal(mapped_default.package.selected_components, {"ssl"})
+    t:require(mapped_default.components.ssl)
+    t:are_equal(mapped_default.components.crypto, nil)
+
+    local explicit_file = path.join(scriptdir, "fixtures", "component-explicit.cps")
+    local mapped_explicit = cps(explicit_file, {components = {"crypto"}})
+    t:require(mapped_explicit)
+    t:are_equal(mapped_explicit.package.selected_components, {"crypto"})
+    t:require(mapped_explicit.components.crypto)
+    t:are_equal(mapped_explicit.components.ssl, nil)
+
+    local single_file = path.join(scriptdir, "fixtures", "valid-single.cps")
+    local mapped_single = cps(single_file)
+    t:require(mapped_single)
+    t:are_equal(mapped_single.package.selected_components, {"zlib"})
+
+    local ambiguous_file = path.join(scriptdir, "fixtures", "component-ambiguous.cps")
+    local ambiguous_result, ambiguous_diags, ambiguous_errors = cps(ambiguous_file)
+    t:are_equal(ambiguous_result, nil)
+    t:require(ambiguous_errors)
+    t:are_equal(ambiguous_diags[1].code, "component-selection-required")
+end
+
+function test_cps_configuration_selection(t)
+    local scriptdir = path.directory(t.filename)
+    local config_file = path.join(scriptdir, "fixtures", "config-selection.cps")
+
+    local mapped_user = cps(config_file, {components = {"core"}, configurations = {"debug", "release"}})
+    t:require(mapped_user)
+    t:are_equal(mapped_user.package.selected_configuration, "debug")
+    t:are_equal(mapped_user.components.core.location, "lib/debug/core.lib")
+    t:are_equal(mapped_user.components.core.includes, {"include/debug"})
+
+    local mapped_package = cps(config_file, {components = {"core"}})
+    t:require(mapped_package)
+    t:are_equal(mapped_package.package.selected_configuration, "release")
+    t:are_equal(mapped_package.components.core.location, "lib/release/core.lib")
+
+    local mapped_base = cps(config_file, {components = {"core"}, configurations = {"profile"}})
+    t:require(mapped_base)
+    t:are_equal(mapped_base.package.selected_configuration, "release")
+    t:are_equal(mapped_base.components.core.location, "lib/release/core.lib")
+
+    local explicit_file = path.join(scriptdir, "fixtures", "component-explicit.cps")
+    local explicit_requires = {explicit_file}
+    local explicit_extra = {}
+    explicit_extra[explicit_file] = {format = "cps", components = {"crypto"}}
+    local explicit_items = package_impl.load_requires(explicit_requires, explicit_extra, {})
+    t:are_equal(#explicit_items, 1)
+    t:are_equal(explicit_items[1].name, "openssl")
+    t:are_equal(explicit_items[1].info.cpsinfo.package.selected_components, {"crypto"})
+
+    local seam_requires = {config_file}
+    local seam_extra = {}
+    seam_extra[config_file] = {format = "cps", components = {"core"}, cps_configurations = {"debug"}}
+    local seam_items = package_impl.load_requires(seam_requires, seam_extra, {})
+    t:are_equal(#seam_items, 1)
+    t:are_equal(seam_items[1].info.cpsinfo.package.selected_configuration, "debug")
 end
